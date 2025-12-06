@@ -49,7 +49,7 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
             else:
                 logger.info(f"Einzelvideo-URL erkannt, starte Download")
-                await update.message.reply_text(f"📥 Lade herunter: {url}")
+                await update.message.reply_text(f"📥 Starte Download...")
 
             # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
             output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
@@ -80,9 +80,9 @@ async def handle_message(update, context):
                 logger.info(f"yt-dlp Output:\n{stdout}")
 
                 if is_channel:
-                    await update.message.reply_text(f"✅ Kanal erfolgreich heruntergeladen!")
+                    await update.message.reply_text(f"✅ Kanal erfolgreich heruntergeladen! \n{url}")
                 else:
-                    await update.message.reply_text(f"✅ Video erfolgreich heruntergeladen!")
+                    await update.message.reply_text(f"✅ Video erfolgreich heruntergeladen! \n{url}")
             else:
                 logger.error(f"Download fehlgeschlagen (Return-Code: {process.returncode})")
                 error_msg = stdout
