@@ -20,22 +20,34 @@ if not BOT_TOKEN:
     print("Error: BOT_TOKEN ist nicht gesetzt. Bitte in .env oder in der Umgebung definieren.")
     sys.exit(1)
 
-YOUTUBE_REGEX = r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=[\w-]+|youtu\.be/[\w-]+))"
+YOUTUBE_REGEX = r"(https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=[\w-]+|channel/[\w-]+|c/[\w-]+|user/[\w-]+|@[\w-]+)|youtu\.be/[\w-]+))"
 
 async def handle_message(update, context):
     text = update.message.text
-    
+
     match = re.search(YOUTUBE_REGEX, text)
     if match:
         url = match.group(1)
-        await update.message.reply_text(f"📥 Lade herunter: {url}")
-        
-        # yt-dlp Befehl
-        subprocess.Popen([
-            "yt-dlp",
-            url,
-            "-o", "/home/marko/videos/instantsauger/%(title)s.%(ext)s"
-        ])
+
+        # Erkenne Kanal-URLs (channel/, c/, user/ oder @handle)
+        is_channel = bool(re.search(r"youtube\.com/(?:channel/|c/|user/|@)", url))
+
+        if is_channel:
+            await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
+        else:
+            await update.message.reply_text(f"📥 Lade herunter: {url}")
+
+        # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
+        output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
+        cmd = ["yt-dlp"]
+        # sicherstellen, dass bei Kanal-URLs die Playlist geladen wird, bei Einzelvideos nicht
+        if is_channel:
+            cmd += ["--yes-playlist"]
+        else:
+            cmd += ["--no-playlist"]
+        cmd += [url, "-o", output_template]
+
+        subprocess.Popen(cmd)
 
     else:
         await update.message.reply_text("Bitte sende mir einen gültigen YouTube-Link.")
