@@ -5,6 +5,7 @@ from pathlib import Path
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import subprocess
 import re
+import asyncio
 
 # Lade .env aus dem selben Verzeichnis, falls python-dotenv installiert ist
 BASE_DIR = Path(__file__).parent
@@ -25,32 +26,47 @@ YOUTUBE_REGEX = r"(https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=[\w-]+|channel
 async def handle_message(update, context):
     text = update.message.text
 
-    match = re.search(YOUTUBE_REGEX, text)
-    if match:
-        url = match.group(1)
+    try:
+        match = re.search(YOUTUBE_REGEX, text)
+        if match:
+            url = match.group(1)
 
-        # Erkenne Kanal-URLs (channel/, c/, user/ oder @handle)
-        is_channel = bool(re.search(r"youtube\.com/(?:channel/|c/|user/|@)", url))
+            # Erkenne Kanal-URLs (channel/, c/, user/ oder @handle)
+            is_channel = bool(re.search(r"youtube\.com/(?:channel/|c/|user/|@)", url))
 
-        if is_channel:
-            await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
+            if is_channel:
+                await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
+            else:
+                await update.message.reply_text(f"📥 Lade herunter: {url}")
+
+            # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
+            output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
+            cmd = ["yt-dlp"]
+            # sicherstellen, dass bei Kanal-URLs die Playlist geladen wird, bei Einzelvideos nicht
+            if is_channel:
+                cmd += ["--yes-playlist"]
+            else:
+                cmd += ["--no-playlist"]
+            cmd += [url, "-o", output_template]
+
+            # Starte Prozess und warte auf Completion
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+
+            if process.returncode == 0:
+                if is_channel:
+                    await update.message.reply_text(f"✅ Kanal erfolgreich heruntergeladen!")
+                else:
+                    await update.message.reply_text(f"✅ Video erfolgreich heruntergeladen!")
+            else:
+                error_msg = stderr if stderr else stdout
+                await update.message.reply_text(f"❌ Fehler beim Download:\n{error_msg[:500]}")
+
         else:
-            await update.message.reply_text(f"📥 Lade herunter: {url}")
+            await update.message.reply_text("Bitte sende mir einen gültigen YouTube-Link.")
 
-        # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
-        output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
-        cmd = ["yt-dlp"]
-        # sicherstellen, dass bei Kanal-URLs die Playlist geladen wird, bei Einzelvideos nicht
-        if is_channel:
-            cmd += ["--yes-playlist"]
-        else:
-            cmd += ["--no-playlist"]
-        cmd += [url, "-o", output_template]
-
-        subprocess.Popen(cmd)
-
-    else:
-        await update.message.reply_text("Bitte sende mir einen gültigen YouTube-Link.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ein Fehler ist aufgetreten:\n{str(e)[:500]}")
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
