@@ -1,11 +1,19 @@
 import os
 import sys
 from pathlib import Path
+import logging
 
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import subprocess
 import re
 import asyncio
+
+# Konfiguriere Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Lade .env aus dem selben Verzeichnis, falls python-dotenv installiert ist
 BASE_DIR = Path(__file__).parent
@@ -25,23 +33,27 @@ YOUTUBE_REGEX = r"(https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=[\w-]+|channel
 
 async def handle_message(update, context):
     text = update.message.text
+    logger.info(f"Nachricht empfangen: {text}")
 
     try:
         match = re.search(YOUTUBE_REGEX, text)
         if match:
             url = match.group(1)
+            logger.info(f"YouTube-URL erkannt: {url}")
 
             # Erkenne Kanal-URLs (channel/, c/, user/ oder @handle)
             is_channel = bool(re.search(r"youtube\.com/(?:channel/|c/|user/|@)", url))
 
             if is_channel:
+                logger.info(f"Kanal-URL erkannt, starte Download aller Videos")
                 await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
             else:
+                logger.info(f"Einzelvideo-URL erkannt, starte Download")
                 await update.message.reply_text(f"📥 Lade herunter: {url}")
 
             # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
             output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
-            cmd = ["yt-dlp"]
+            cmd = ["yt-dlp", "-v"]
             # sicherstellen, dass bei Kanal-URLs die Playlist geladen wird, bei Einzelvideos nicht
             if is_channel:
                 cmd += ["--yes-playlist"]
@@ -49,23 +61,39 @@ async def handle_message(update, context):
                 cmd += ["--no-playlist"]
             cmd += [url, "-o", output_template]
 
+            archive_file = "/home/marko/videos/instantsauger/.archive"
+            cmd += ["--download-archive", archive_file]
+            
+            logger.info(f"Starte yt-dlp: {' '.join(cmd)}")
             # Starte Prozess und warte auf Completion
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = process.communicate()
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            
+            # Gib Output direkt aus
+            for line in process.stdout:
+                logger.info(f"[yt-dlp] {line.rstrip()}")
+            
+            process.wait()
+            stdout = process.stdout.read() if process.stdout else ""
 
             if process.returncode == 0:
+                logger.info(f"Download erfolgreich abgeschlossen (Return-Code: 0)")
+                logger.info(f"yt-dlp Output:\n{stdout}")
+
                 if is_channel:
                     await update.message.reply_text(f"✅ Kanal erfolgreich heruntergeladen!")
                 else:
                     await update.message.reply_text(f"✅ Video erfolgreich heruntergeladen!")
             else:
-                error_msg = stderr if stderr else stdout
+                logger.error(f"Download fehlgeschlagen (Return-Code: {process.returncode})")
+                error_msg = stdout
                 await update.message.reply_text(f"❌ Fehler beim Download:\n{error_msg[:500]}")
 
         else:
+            logger.warning(f"Keine gültige YouTube-URL gefunden")
             await update.message.reply_text("Bitte sende mir einen gültigen YouTube-Link.")
 
     except Exception as e:
+        logger.exception(f"Exception aufgetreten: {str(e)}")
         await update.message.reply_text(f"❌ Ein Fehler ist aufgetreten:\n{str(e)[:500]}")
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
