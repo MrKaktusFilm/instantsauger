@@ -30,7 +30,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     print("Error: BOT_TOKEN ist nicht gesetzt. Bitte in .env oder in der Umgebung definieren.")
     sys.exit(1)
-
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/home/marko/videos/instantsauger")
+output_dir = Path(OUTPUT_DIR)
+output_dir.mkdir(parents=True, exist_ok=True)
 YOUTUBE_REGEX = r'(https?://(?:www\.)?(?:youtube\.com/[^"]+|youtu\.be/[^"]+))'
 
 async def handle_message(update, context):
@@ -59,7 +61,7 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"📥 Starte Download...")
 
             # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
-            output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
+            output_template = f"{output_dir}/%(uploader)s/%(title)s.%(ext)s"
 
             cmd = [
                 "yt-dlp",
@@ -68,7 +70,7 @@ async def handle_message(update, context):
             ]
 
             if is_playlist or is_channel:
-                archive_file = "/home/marko/videos/instantsauger/.archive"
+                archive_file = str(output_dir / ".archive")
                 cmd += ["--download-archive", archive_file]
 
             cmd.append(url)
