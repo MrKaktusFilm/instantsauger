@@ -1,7 +1,9 @@
+import cmd
 import os
 import sys
 from pathlib import Path
 import logging
+from urllib.parse import urlparse, parse_qs
 
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import subprocess
@@ -29,7 +31,7 @@ if not BOT_TOKEN:
     print("Error: BOT_TOKEN ist nicht gesetzt. Bitte in .env oder in der Umgebung definieren.")
     sys.exit(1)
 
-YOUTUBE_REGEX = r"(https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=[\w-]+|channel/[\w-]+|c/[\w-]+|user/[\w-]+|@[\w-]+)|youtu\.be/[\w-]+))"
+YOUTUBE_REGEX = r'(https?://(?:www\.)?(?:youtube\.com/[^"]+|youtu\.be/[^"]+))'
 
 async def handle_message(update, context):
     text = update.message.text
@@ -41,10 +43,15 @@ async def handle_message(update, context):
             url = match.group(1)
             logger.info(f"YouTube-URL erkannt: {url}")
 
-            # Erkenne Kanal-URLs (channel/, c/, user/ oder @handle)
+            parsed_url = urlparse(url)
+            query = parse_qs(parsed_url.query)
+            is_playlist = bool(query.get("list")) or parsed_url.path.startswith("/playlist")
             is_channel = bool(re.search(r"youtube\.com/(?:channel/|c/|user/|@)", url))
 
-            if is_channel:
+            if is_playlist:
+                logger.info(f"Playlist-URL erkannt, starte Download")
+                await update.message.reply_text(f"📥 Lade die Playlist herunter: {url}")
+            elif is_channel:
                 logger.info(f"Kanal-URL erkannt, starte Download aller Videos")
                 await update.message.reply_text(f"📥 Lade alle Videos des Kanals herunter: {url}")
             else:
@@ -53,17 +60,18 @@ async def handle_message(update, context):
 
             # yt-dlp Befehl: speichere in Unterordner mit Kanalnamen via %(uploader)s
             output_template = "/home/marko/videos/instantsauger/%(uploader)s/%(title)s.%(ext)s"
-            cmd = ["yt-dlp", "-v"]
-            # sicherstellen, dass bei Kanal-URLs die Playlist geladen wird, bei Einzelvideos nicht
-            if is_channel:
-                cmd += ["--yes-playlist"]
-            else:
-                cmd += ["--no-playlist"]
-            cmd += [url, "-o", output_template]
 
-            archive_file = "/home/marko/videos/instantsauger/.archive"
-            cmd += ["--download-archive", archive_file]
-            
+            cmd = [
+                "yt-dlp",
+                "-v",
+                "-o", output_template
+            ]
+
+            if is_playlist or is_channel:
+                archive_file = "/home/marko/videos/instantsauger/.archive"
+                cmd += ["--download-archive", archive_file]
+
+            cmd.append(url)
             logger.info(f"Starte yt-dlp: {' '.join(cmd)}")
             # Starte Prozess und warte auf Completion
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
