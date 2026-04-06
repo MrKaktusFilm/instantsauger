@@ -66,7 +66,11 @@ async def handle_message(update, context):
             cmd = [
                 "yt-dlp",
                 "-v",
-                "-o", output_template
+                "-o", output_template,
+                "--write-thumbnail",
+                "--embed-thumbnail",
+                "--embed-info-json",
+                "--write-info-json",
             ]
 
             if is_playlist or is_channel:
